@@ -98,16 +98,16 @@ describe('ApiHandler', () => {
     });
 
     it('should return NOT_FOUND if no machines are available', () => {
-        mockMachineStateTable.listMachinesAtLocation.mockReturnValue([]);
-        const request: RequestMachineRequestModel = {
-            method: HttpMethod.POST,
-            path: '/machine/request',
-            token: VALID_TOKEN,
-            locationId,
-            jobId,
-        };
-        const response = apiHandler.handle(request);
-        expect(response.statusCode).toBe(HttpResponseCode.NOT_FOUND);
+      mockMachineStateTable.listMachinesAtLocation.mockReturnValue([]);
+      const request: RequestMachineRequestModel = {
+        method: HttpMethod.POST,
+        path: '/machine/request',
+        token: VALID_TOKEN,
+        locationId,
+        jobId,
+      };
+      const response = apiHandler.handle(request);
+      expect(response.statusCode).toBe(HttpResponseCode.NOT_FOUND);
     });
   });
 
@@ -116,29 +116,29 @@ describe('ApiHandler', () => {
     const machine: MachineStateDocument = { machineId, locationId: 'location-a', status: MachineStatus.RUNNING, currentJobId: 'job-1' };
 
     it('should return a machine from the cache', () => {
-        mockCache.get.mockReturnValue(machine);
-        const response = apiHandler.handle({ method: HttpMethod.GET, path: `/machine/${machineId}`, token: VALID_TOKEN });
+      mockCache.get.mockReturnValue(machine);
+      const response = apiHandler.handle({ method: HttpMethod.GET, path: `/machine/${machineId}`, token: VALID_TOKEN });
 
-        expect(response.statusCode).toBe(HttpResponseCode.OK);
-        expect(response.machine).toEqual(machine);
-        expect(mockMachineStateTable.getMachine).not.toHaveBeenCalled();
+      expect(response.statusCode).toBe(HttpResponseCode.OK);
+      expect(response.machine).toEqual(machine);
+      expect(mockMachineStateTable.getMachine).not.toHaveBeenCalled();
     });
 
     it('should return a machine from the database if not in cache', () => {
-        mockCache.get.mockReturnValue(undefined);
-        mockMachineStateTable.getMachine.mockReturnValue(machine);
-        const response = apiHandler.handle({ method: HttpMethod.GET, path: `/machine/${machineId}`, token: VALID_TOKEN });
+      mockCache.get.mockReturnValue(undefined);
+      mockMachineStateTable.getMachine.mockReturnValue(machine);
+      const response = apiHandler.handle({ method: HttpMethod.GET, path: `/machine/${machineId}`, token: VALID_TOKEN });
 
-        expect(response.statusCode).toBe(HttpResponseCode.OK);
-        expect(response.machine).toEqual(machine);
-        expect(mockCache.put).toHaveBeenCalledWith(machineId, machine);
+      expect(response.statusCode).toBe(HttpResponseCode.OK);
+      expect(response.machine).toEqual(machine);
+      expect(mockCache.put).toHaveBeenCalledWith(machineId, machine);
     });
 
     it('should return NOT_FOUND if machine does not exist', () => {
-        mockCache.get.mockReturnValue(undefined);
-        mockMachineStateTable.getMachine.mockReturnValue(undefined);
-        const response = apiHandler.handle({ method: HttpMethod.GET, path: `/machine/${machineId}`, token: VALID_TOKEN });
-        expect(response.statusCode).toBe(HttpResponseCode.NOT_FOUND);
+      mockCache.get.mockReturnValue(undefined);
+      mockMachineStateTable.getMachine.mockReturnValue(undefined);
+      const response = apiHandler.handle({ method: HttpMethod.GET, path: `/machine/${machineId}`, token: VALID_TOKEN });
+      expect(response.statusCode).toBe(HttpResponseCode.NOT_FOUND);
     });
   });
 
@@ -147,54 +147,54 @@ describe('ApiHandler', () => {
     const machine: MachineStateDocument = { machineId, locationId: 'location-a', status: MachineStatus.AWAITING_DROPOFF, currentJobId: 'job-1' };
 
     it('should start a machine that is awaiting dropoff', () => {
-        const updatedMachine = { ...machine, status: MachineStatus.RUNNING };
-        mockMachineStateTable.getMachine.mockReturnValueOnce(machine).mockReturnValueOnce(updatedMachine);
+      const updatedMachine = { ...machine, status: MachineStatus.RUNNING };
+      mockMachineStateTable.getMachine.mockReturnValueOnce(machine).mockReturnValueOnce(updatedMachine);
 
-        const response = apiHandler.handle({ method: HttpMethod.POST, path: `/machine/${machineId}/start`, token: VALID_TOKEN });
+      const response = apiHandler.handle({ method: HttpMethod.POST, path: `/machine/${machineId}/start`, token: VALID_TOKEN });
 
-        expect(response.statusCode).toBe(HttpResponseCode.OK);
-        expect(response.machine).toEqual(updatedMachine);
-        expect(mockSmartMachineClient.startCycle).toHaveBeenCalledWith(machineId);
-        expect(mockMachineStateTable.updateMachineStatus).toHaveBeenCalledWith(machineId, MachineStatus.RUNNING);
-        expect(mockCache.put).toHaveBeenCalledWith(machineId, updatedMachine);
+      expect(response.statusCode).toBe(HttpResponseCode.OK);
+      expect(response.machine).toEqual(updatedMachine);
+      expect(mockSmartMachineClient.startCycle).toHaveBeenCalledWith(machineId);
+      expect(mockMachineStateTable.updateMachineStatus).toHaveBeenCalledWith(machineId, MachineStatus.RUNNING);
+      expect(mockCache.put).toHaveBeenCalledWith(machineId, updatedMachine);
     });
 
     it('should return BAD_REQUEST if machine is not awaiting dropoff', () => {
-        const runningMachine = { ...machine, status: MachineStatus.RUNNING };
-        mockMachineStateTable.getMachine.mockReturnValue(runningMachine);
+      const runningMachine = { ...machine, status: MachineStatus.RUNNING };
+      mockMachineStateTable.getMachine.mockReturnValue(runningMachine);
 
-        const response = apiHandler.handle({ method: HttpMethod.POST, path: `/machine/${machineId}/start`, token: VALID_TOKEN });
+      const response = apiHandler.handle({ method: HttpMethod.POST, path: `/machine/${machineId}/start`, token: VALID_TOKEN });
 
-        expect(response.statusCode).toBe(HttpResponseCode.BAD_REQUEST);
-        expect(response.machine).toEqual(runningMachine);
+      expect(response.statusCode).toBe(HttpResponseCode.BAD_REQUEST);
+      expect(response.machine).toEqual(runningMachine);
     });
 
     it('should handle hardware errors when starting a machine', () => {
-        const errorMachine = { ...machine, status: MachineStatus.ERROR };
-        mockMachineStateTable.getMachine.mockReturnValueOnce(machine).mockReturnValueOnce(errorMachine);
-        mockSmartMachineClient.startCycle.mockImplementation(() => {
-            throw new Error('Hardware fault');
-        });
+      const errorMachine = { ...machine, status: MachineStatus.ERROR };
+      mockMachineStateTable.getMachine.mockReturnValueOnce(machine).mockReturnValueOnce(errorMachine);
+      mockSmartMachineClient.startCycle.mockImplementation(() => {
+        throw new Error('Hardware fault');
+      });
 
-        const response = apiHandler.handle({ method: HttpMethod.POST, path: `/machine/${machineId}/start`, token: VALID_TOKEN });
+      const response = apiHandler.handle({ method: HttpMethod.POST, path: `/machine/${machineId}/start`, token: VALID_TOKEN });
 
-        expect(response.statusCode).toBe(HttpResponseCode.HARDWARE_ERROR);
-        expect(response.machine).toEqual(errorMachine);
-        expect(mockMachineStateTable.updateMachineStatus).toHaveBeenCalledWith(machineId, MachineStatus.ERROR);
-        expect(mockCache.put).toHaveBeenCalledWith(machineId, errorMachine);
+      expect(response.statusCode).toBe(HttpResponseCode.HARDWARE_ERROR);
+      expect(response.machine).toEqual(errorMachine);
+      expect(mockMachineStateTable.updateMachineStatus).toHaveBeenCalledWith(machineId, MachineStatus.ERROR);
+      expect(mockCache.put).toHaveBeenCalledWith(machineId, errorMachine);
     });
 
     it('should return NOT_FOUND if machine to start does not exist', () => {
-        mockMachineStateTable.getMachine.mockReturnValue(undefined);
-        const response = apiHandler.handle({ method: HttpMethod.POST, path: `/machine/${machineId}/start`, token: VALID_TOKEN });
-        expect(response.statusCode).toBe(HttpResponseCode.NOT_FOUND);
+      mockMachineStateTable.getMachine.mockReturnValue(undefined);
+      const response = apiHandler.handle({ method: HttpMethod.POST, path: `/machine/${machineId}/start`, token: VALID_TOKEN });
+      expect(response.statusCode).toBe(HttpResponseCode.NOT_FOUND);
     });
   });
 
   describe('Routing', () => {
     it('should return INTERNAL_SERVER_ERROR for unknown paths', () => {
-        const response = apiHandler.handle({ method: HttpMethod.GET, path: '/unknown/path', token: VALID_TOKEN });
-        expect(response.statusCode).toBe(HttpResponseCode.INTERNAL_SERVER_ERROR);
+      const response = apiHandler.handle({ method: HttpMethod.GET, path: '/unknown/path', token: VALID_TOKEN });
+      expect(response.statusCode).toBe(HttpResponseCode.INTERNAL_SERVER_ERROR);
     });
   });
 });
