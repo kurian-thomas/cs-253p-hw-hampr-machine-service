@@ -13,8 +13,13 @@ import { TokenValidationError } from "../errors/token-validation-errors"
  */
 export class ApiHandler {
   private cache: DataCache<MachineStateDocument>;
+  private machineTable: MachineStateTable;
+  private smartMachine: SmartMachineClient;
+
   constructor() {
     this.cache = DataCache.getInstance<MachineStateDocument>();
+    this.machineTable = MachineStateTable.getInstance();
+    this.smartMachine = SmartMachineClient.getInstance();
   }
 
   /**
@@ -24,7 +29,7 @@ export class ApiHandler {
    */
   private checkToken(token: string) {
     if (token == "invalid-token") {
-      throw new TokenValidationError("Invalid Token");
+      throw new TokenValidationError();
     }
   }
 
@@ -38,7 +43,24 @@ export class ApiHandler {
    * @returns A response model with the status code and the reserved machine's state.
    */
   private handleRequestMachine(request: RequestMachineRequestModel): MachineResponseModel {
-    // Your implementation here
+    const { locationId, jobId } = request;
+
+    const availableMachines = this.machineTable.listMachinesAtLocation(locationId)
+      .filter(m => m.status === MachineStatus.AVAILABLE);
+
+    if (availableMachines.length === 0) {
+      return { statusCode: HttpResponseCode.NOT_FOUND, machine: undefined };
+    }
+
+    const machine = availableMachines[0];
+
+    this.machineTable.updateMachineStatus(machine.machineId, MachineStatus.AWAITING_DROPOFF);
+    this.machineTable.updateMachineJobId(machine.machineId, jobId);
+
+    const updatedMachine = this.machineTable.getMachine(machine.machineId)!;
+    this.cache.put(machine.machineId, updatedMachine);
+
+    return { statusCode: HttpResponseCode.OK, machine: updatedMachine };
   }
 
   /**
@@ -48,7 +70,18 @@ export class ApiHandler {
    * @returns A response model with the status code and the machine's state.
    */
   private handleGetMachine(request: GetMachineRequestModel): MachineResponseModel {
-    // Your implementation here
+    const { machineId } = request;
+
+    let machine = this.cache.get(machineId);
+    if (!machine) {
+      machine = this.machineTable.getMachine(machineId);
+      if (!machine) {
+        return { statusCode: HttpResponseCode.NOT_FOUND, machine: undefined };
+      }
+      this.cache.put(machineId, machine);
+    }
+
+    return { statusCode: HttpResponseCode.OK, machine };
   }
 
   /**
@@ -59,6 +92,29 @@ export class ApiHandler {
    * @returns A response model with the status code and the updated machine's state.
    */
   private handleStartMachine(request: StartMachineRequestModel): MachineResponseModel {
+    const { machineId } = request;
+    const machine = this.machineTable.getMachine(machineId);
+
+    if (!machine) {
+      return { statusCode: HttpResponseCode.NOT_FOUND, machine: undefined };
+    }
+
+    if (machine.status !== MachineStatus.AWAITING_DROPOFF) {
+      return { statusCode: HttpResponseCode.BAD_REQUEST, machine };
+    }
+
+    try {
+      this.smartMachine.startCycle(machineId);
+      this.machineTable.updateMachineStatus(machineId, MachineStatus.RUNNING);
+      const updatedMachine = this.machineTable.getMachine(machineId)!;
+      this.cache.put(machineId, updatedMachine);
+      return { statusCode: HttpResponseCode.OK, machine: updatedMachine };
+    } catch (err) {
+      this.machineTable.updateMachineStatus(machineId, MachineStatus.ERROR);
+      const updatedMachine = this.machineTable.getMachine(machineId)!;
+      this.cache.put(machineId, updatedMachine);
+      return { statusCode: HttpResponseCode.HARDWARE_ERROR, machine: updatedMachine };
+    }
   }
 
   /**
@@ -68,17 +124,7 @@ export class ApiHandler {
    * @returns A response model from one of the specific handlers, or an error response.
    */
   public handle(request: RequestModel) {
-    try {
-      this.checkToken(request.token);
-    } catch (err) {
-      if (err instanceof TokenValidationError) {
-        let errorResponse = {
-          statusCode: HttpResponseCode.UNAUTHORIZED,
-          message: 'Invalid token',
-        };
-        return errorResponse;
-      }
-    }
+    this.checkToken(request.token);
 
     if (request.method === 'POST' && request.path === '/machine/request') {
       return this.handleRequestMachine(request as RequestMachineRequestModel);

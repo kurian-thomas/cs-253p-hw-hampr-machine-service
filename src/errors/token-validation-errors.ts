@@ -1,5 +1,11 @@
+import { HttpResponseCode } from "../handler/model";
+
 export class TokenValidationError extends Error {
-  constructor(message: string) {
+  constructor() {
+    const message = JSON.stringify({
+      statusCode: HttpResponseCode.UNAUTHORIZED,
+      message: 'Invalid token',
+    });
     super(message);
     this.name = "TokenValidationError";
   }
