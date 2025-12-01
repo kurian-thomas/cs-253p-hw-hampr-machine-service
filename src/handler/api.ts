@@ -55,7 +55,7 @@ export class ApiHandler {
 
     this.updateCachedMachineState(machine.machineId, MachineStatus.AWAITING_DROPOFF);
 
-    const updatedMachine = this.updateCachedMachineId(machine.machineId, jobId);
+    const updatedMachine = this.updateCachedMachineJobId(machine.machineId, jobId);
     return { statusCode: HttpResponseCode.OK, machine: updatedMachine };
   }
 
@@ -95,7 +95,7 @@ export class ApiHandler {
     return updatedMachine;
   }
 
-  private updateCachedMachineId(machineId: string, jobId: string): MachineStateDocument | undefined {
+  private updateCachedMachineJobId(machineId: string, jobId: string): MachineStateDocument | undefined {
     this.machineTable.updateMachineJobId(machineId, jobId);
     const updatedMachine = this.machineTable.getMachine(machineId)!;
     this.cache.put(machineId, updatedMachine);
