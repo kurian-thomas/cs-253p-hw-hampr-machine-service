@@ -1,6 +1,5 @@
 import { DataCache } from "../database/cache";
 import { MachineStateTable } from "../database/table";
-import { IdentityProviderClient } from "../external/idp";
 import { SmartMachineClient } from "../external/smart-machine";
 import { GetMachineRequestModel, HttpResponseCode, MachineResponseModel, RequestMachineRequestModel, RequestModel, StartMachineRequestModel } from "./model";
 import { MachineStateDocument, MachineStatus } from "../database/schema";
@@ -54,12 +53,9 @@ export class ApiHandler {
 
     const machine = availableMachines[0];
 
-    this.machineTable.updateMachineStatus(machine.machineId, MachineStatus.AWAITING_DROPOFF);
-    this.machineTable.updateMachineJobId(machine.machineId, jobId);
+    this.updateCachedMachineState(machine.machineId, MachineStatus.AWAITING_DROPOFF);
 
-    const updatedMachine = this.machineTable.getMachine(machine.machineId)!;
-    this.cache.put(machine.machineId, updatedMachine);
-
+    const updatedMachine = this.updateCachedMachineId(machine.machineId, jobId);
     return { statusCode: HttpResponseCode.OK, machine: updatedMachine };
   }
 
@@ -72,18 +68,39 @@ export class ApiHandler {
   private handleGetMachine(request: GetMachineRequestModel): MachineResponseModel {
     const { machineId } = request;
 
-    let machine = this.cache.get(machineId);
+    let machine = this.getCachedMachine(machineId);
     if (!machine) {
-      machine = this.machineTable.getMachine(machineId);
-      if (!machine) {
-        return { statusCode: HttpResponseCode.NOT_FOUND, machine: undefined };
-      }
-      this.cache.put(machineId, machine);
+      return { statusCode: HttpResponseCode.NOT_FOUND, machine: undefined };
     }
 
     return { statusCode: HttpResponseCode.OK, machine };
   }
 
+  private getCachedMachine(machineId: string): MachineStateDocument | undefined {
+    let machine = this.cache.get(machineId);
+
+    if (!machine) {
+      machine = this.machineTable.getMachine(machineId);
+    }
+    if (machine) {
+      this.cache.put(machineId, machine);
+    }
+    return machine;
+  }
+
+  private updateCachedMachineState(machineId: string, state: MachineStatus): MachineStateDocument | undefined {
+    this.machineTable.updateMachineStatus(machineId, state);
+    const updatedMachine = this.machineTable.getMachine(machineId)!;
+    this.cache.put(machineId, updatedMachine);
+    return updatedMachine;
+  }
+
+  private updateCachedMachineId(machineId: string, jobId: string): MachineStateDocument | undefined {
+    this.machineTable.updateMachineJobId(machineId, jobId);
+    const updatedMachine = this.machineTable.getMachine(machineId)!;
+    this.cache.put(machineId, updatedMachine);
+    return updatedMachine;
+  }
   /**
    * Starts the cycle of a machine that is awaiting drop-off.
    * It validates the machine's status, calls the external Smart Machine API to start the cycle,
@@ -93,7 +110,7 @@ export class ApiHandler {
    */
   private handleStartMachine(request: StartMachineRequestModel): MachineResponseModel {
     const { machineId } = request;
-    const machine = this.machineTable.getMachine(machineId);
+    let machine = this.getCachedMachine(machineId);
 
     if (!machine) {
       return { statusCode: HttpResponseCode.NOT_FOUND, machine: undefined };
@@ -105,14 +122,10 @@ export class ApiHandler {
 
     try {
       this.smartMachine.startCycle(machineId);
-      this.machineTable.updateMachineStatus(machineId, MachineStatus.RUNNING);
-      const updatedMachine = this.machineTable.getMachine(machineId)!;
-      this.cache.put(machineId, updatedMachine);
+      const updatedMachine = this.updateCachedMachineState(machineId, MachineStatus.RUNNING);
       return { statusCode: HttpResponseCode.OK, machine: updatedMachine };
     } catch (err) {
-      this.machineTable.updateMachineStatus(machineId, MachineStatus.ERROR);
-      const updatedMachine = this.machineTable.getMachine(machineId)!;
-      this.cache.put(machineId, updatedMachine);
+      let updatedMachine = this.updateCachedMachineState(machineId, MachineStatus.ERROR);
       return { statusCode: HttpResponseCode.HARDWARE_ERROR, machine: updatedMachine };
     }
   }
